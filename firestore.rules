@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isTeamMember(teamId) {
+      return request.auth != null && teamId != null &&
+        exists(/databases/$(database)/documents/teams/$(teamId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)).data.members;
+    }
+
+    function isTeamLeader(teamId) {
+      return request.auth != null && teamId != null &&
+        exists(/databases/$(database)/documents/teams/$(teamId)) &&
+        get(/databases/$(database)/documents/teams/$(teamId)).data.leaderId == request.auth.uid;
+    }
+
+    match /teams/{teamId} {
+      allow read: if request.auth != null;
+      allow read: if resource.data.inviteEnabled == true || !('inviteEnabled' in resource.data);
+      allow create: if request.auth != null
+        && request.resource.data.leaderId == request.auth.uid
+        && request.resource.data.members.hasAny([request.auth.uid]);
+      allow update: if request.auth != null
+        && (resource.data.leaderId == request.auth.uid
+            || request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['members', 'memberNames']));
+      allow delete: if request.auth != null
+        && resource.data.leaderId == request.auth.uid;
+    }
+
+    match /poker_sessions/{sessionId} {
+      allow read: if request.auth != null
+        && (!('teamId' in resource.data) || resource.data.teamId == null || isTeamMember(resource.data.teamId));
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid || isTeamLeader(resource.data.teamId));
+      
+      match /items/{itemId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    match /review_boards/{boardId} {
+      allow read: if request.auth != null
+        && (!('teamId' in resource.data) || resource.data.teamId == null || isTeamMember(resource.data.teamId));
+      allow create: if request.auth != null;
+      allow update: if request.auth != null
+        && (!('teamId' in resource.data) || resource.data.teamId == null 
+            || isTeamMember(resource.data.teamId)); // Allow voting/column rename for members
+      allow delete: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid || isTeamLeader(resource.data.teamId));
+    }
+
+    match /knowledge_boards/{boardId} {
+      allow read: if request.auth != null
+        && (!('teamId' in resource.data) || resource.data.teamId == null || isTeamMember(resource.data.teamId));
+      allow create: if request.auth != null;
+      allow update: if request.auth != null; // Members can update areas
+      allow delete: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid || isTeamLeader(resource.data.teamId));
+    }
+
+    match /review_cards/{cardId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /member_knowledge/{memberId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /presence/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
