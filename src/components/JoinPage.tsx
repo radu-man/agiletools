@@ -76,7 +76,6 @@ const JoinPage: React.FC = () => {
 
         const currentUser = auth.currentUser;
         if (!currentUser) {
-          // Save token for after login
           sessionStorage.setItem('pendingInviteToken', token);
           setPhase('form');
           return;
